@@ -145,7 +145,7 @@ func processRegularLine(currentFn *string, lineNum int, line string, pkgInfo *pk
 			*currentFn = strings.ReplaceAll(line, "{", "")
 		}
 		for i, v := range pkgInfo.imports {
-			if strings.Contains(line, v.name) {
+			if strings.Contains(line, v.name+".") {
 				pkgInfo.imports[i].usages = append(
 					pkgInfo.imports[i].usages,
 					pkgImportUsage{lineNum: lineNum, line: line, fn: *currentFn},
