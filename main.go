@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -42,8 +43,8 @@ type importUsedIn struct {
 }
 
 const (
-	path   = "/Users/trapck/go/krapi"
-	module = "github.com/trapck/kr.api"
+	path   = "/Users/trapck/go/poc.bp.api"
+	module = "poc.bp.api"
 )
 
 func main() {
@@ -178,10 +179,10 @@ func aggImports(pkgs map[string][]pkgFileInfo) map[string]importedPkgInfo {
 
 func print(packages map[string][]pkgFileInfo) {
 	importInfo := aggImports(packages)
-	printPkgInfo(packages)
-	fmt.Println()
-	fmt.Println(strings.Repeat("*", 50))
-	fmt.Println()
+	//printPkgInfo(packages)
+	//fmt.Println()
+	//fmt.Println(strings.Repeat("*", 50))
+	//fmt.Println()
 	printImportInfo(importInfo)
 }
 
@@ -204,17 +205,30 @@ func printPkgInfo(packages map[string][]pkgFileInfo) {
 }
 
 func printImportInfo(packages map[string]importedPkgInfo) {
-	for k, v := range packages {
+	keys := []string{}
+	for k := range packages {
 		if strings.Contains(k, module) {
-			fmt.Println(k + strings.Repeat("=", 20))
-			for k, v := range v.usedIn {
-				fmt.Println(fmt.Sprintf("%s%s", getIndent(1), k))
-				for _, v := range v {
-					fmt.Println(fmt.Sprintf("%s%s", getIndent(2), v.file))
-					for _, v := range v.usages {
-						fmt.Println(fmt.Sprintf("%s%d %s", getIndent(3), v.lineNum, v.fn))
-						fmt.Println(fmt.Sprintf("%s%s", getIndent(4), v.line))
-					}
+			keys = append(keys, k)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		iParts := strings.Split(keys[i], "/")
+		jParts := strings.Split(keys[j], "/")
+		if len(iParts) != len(jParts) {
+			return len(iParts) < len(jParts)
+		}
+		return keys[i] < keys[j]
+	})
+	for _, k := range keys {
+		v := packages[k]
+		fmt.Println(k + strings.Repeat("=", 20))
+		for k, v := range v.usedIn {
+			fmt.Println(fmt.Sprintf("%s%s", getIndent(1), k))
+			for _, v := range v {
+				fmt.Println(fmt.Sprintf("%s%s %s", getIndent(2), v.file, v.path))
+				for _, v := range v.usages {
+					fmt.Println(fmt.Sprintf("%s%d %s", getIndent(3), v.lineNum, v.fn))
+					fmt.Println(fmt.Sprintf("%s%s", getIndent(4), v.line))
 				}
 			}
 		}
