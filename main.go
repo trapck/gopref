@@ -1,13 +1,19 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type pkg struct {
@@ -43,13 +49,47 @@ type importUsedIn struct {
 }
 
 const (
-	path   = "/Users/trapck/go/poc.bp.api"
-	module = "poc.bp.api"
+	path       = "/Users/trapck/go/poc.bp.api"
+	module     = "github.com/trapck/kr.api"
+	gitHubUser = "trapck"
+	repo       = "kr.api"
+	tmp        = "/Users/trapck/go/gopref/temp"
 )
 
 func main() {
+	tmpPath := tmp + "/" + strconv.Itoa(int(time.Now().UnixNano()))
+	tmpFile := tmpPath + ".zip"
+	url := fmt.Sprintf("https://github.com/%s/%s/archive/master.zip", gitHubUser, repo)
+
+	resp, err := http.Get(url)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("unsuccess response status %d", resp.StatusCode)
+	}
+	f, err := os.Create(tmpFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.Remove(tmpFile)
+	defer f.Close()
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f.Write(b)
+	rootPath, err := unzip(tmpFile, tmpPath)
+	defer os.RemoveAll(tmpPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	packages := map[string][]pkgFileInfo{}
-	filepath.Walk(path, func(p string, i os.FileInfo, err error) error {
+	filepath.Walk(rootPath, func(p string, i os.FileInfo, err error) error {
 		fName := i.Name()
 		if filepath.Ext(fName) == ".go" && !strings.Contains(fName, "_test") {
 			pkgInfo, err := scanGo(p, i)
@@ -237,4 +277,50 @@ func printImportInfo(packages map[string]importedPkgInfo) {
 
 func getIndent(count int) string {
 	return strings.Repeat("  ", count)
+}
+
+func unzip(src string, dest string) (rootPath string, err error) {
+	rootPath = dest
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return rootPath, err
+	}
+	defer r.Close()
+
+	for i, f := range r.File {
+		fi := f.FileInfo()
+		fpath := filepath.Join(dest, f.Name)
+
+		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
+			return rootPath, fmt.Errorf("%s: illegal file path", fpath)
+		}
+		if fi.IsDir() {
+			os.MkdirAll(fpath, os.ModePerm)
+			if i == 0 {
+				rootPath = fpath
+			}
+			continue
+		}
+		if filepath.Ext(f.Name) != ".go" {
+			continue
+		}
+		if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+			return rootPath, err
+		}
+		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		defer outFile.Close()
+		if err != nil {
+			return rootPath, err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return rootPath, err
+		}
+		defer rc.Close()
+		_, err = io.Copy(outFile, rc)
+		if err != nil {
+			return rootPath, err
+		}
+	}
+	return rootPath, nil
 }
